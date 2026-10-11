@@ -32,7 +32,7 @@ wss.on("connection", (ws) => {
       const creating = msg.type === "create";
       const code = creating
         ? randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()
-        : String(msg.room || "").trim().toUpperCase();
+   : String(msg.code || msg.room || "").trim().toUpperCase();
 
       if (!/^[A-Z0-9]{4,10}$/.test(code)) {
         return send(ws, {
@@ -80,11 +80,13 @@ wss.on("connection", (ws) => {
       room.players.add(ws);
 
       send(ws, {
-        type: creating ? "created" : "joined",
-        room: code,
-        playerId,
-        players: room.players.size
-      });
+  type: creating ? "created" : "joined",
+  room: code,
+  code,
+  playerId,
+  id: playerId,
+  players: room.players.size
+});
 
       if (room.players.size === 2) {
         for (const peer of room.players) {
