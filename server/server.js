@@ -1,3 +1,4 @@
+
 import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID } from "node:crypto";
 
@@ -21,53 +22,76 @@ wss.on("connection", (ws) => {
     try {
       msg = JSON.parse(raw.toString());
     } catch {
-      return send(ws, { type: "error", message: "Mensagem inválida." });
+      return send(ws, {
+        type: "error",
+        message: "Mensagem inválida."
+      });
     }
 
     if (msg.type === "create" || msg.type === "join") {
-const code = msg.type === "create"
-  ? Math.random().toString(36).substring(2, 8).toUpperCase()
-  : String(msg.room || "").trim().toUpperCase();
+      const creating = msg.type === "create";
+      const code = creating
+        ? randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()
+        : String(msg.room || "").trim().toUpperCase();
 
       if (!/^[A-Z0-9]{4,10}$/.test(code)) {
-        return send(ws, { type: "error", message: "Código inválido (4 a 10 letras ou números)." });
+        return send(ws, {
+          type: "error",
+          message: "Código inválido (4 a 10 letras ou números)."
+        });
       }
 
       let room = rooms.get(code);
 
-      if (msg.type === "create") {
+      if (creating) {
         if (room) {
-          return send(ws, { type: "error", message: "Essa sala já existe." });
+          return send(ws, {
+            type: "error",
+            message: "Essa sala já existe. Tente novamente."
+          });
         }
 
         room = { players: new Set() };
         rooms.set(code, room);
       } else if (!room) {
-        return send(ws, { type: "error", message: "Sala não encontrada. Confira o código." });
+        return send(ws, {
+          type: "error",
+          message: "Sala não encontrada. Confira o código."
+        });
       }
 
       if (room.players.size >= 2) {
-        return send(ws, { type: "error", message: "A sala já está cheia." });
+        if (creating) rooms.delete(code);
+        return send(ws, {
+          type: "error",
+          message: "A sala já está cheia."
+        });
       }
 
       if (roomCode) {
-        rooms.get(roomCode)?.players.delete(ws);
+        const oldRoom = rooms.get(roomCode);
+        if (oldRoom) {
+          oldRoom.players.delete(ws);
+          if (oldRoom.players.size === 0) rooms.delete(roomCode);
+        }
       }
 
       roomCode = code;
       room.players.add(ws);
 
       send(ws, {
-        type: "joined",
+        type: creating ? "created" : "joined",
         room: code,
         playerId,
         players: room.players.size
       });
 
-      for (const peer of room.players) {
-        if (peer !== ws) {
-          send(peer, { type: "opponent_joined", players: room.players.size });
-          send(ws, { type: "opponent_joined", players: room.players.size });
+      if (room.players.size === 2) {
+        for (const peer of room.players) {
+          send(peer, {
+            type: "peer-joined",
+            players: 2
+          });
         }
       }
 
@@ -75,21 +99,22 @@ const code = msg.type === "create"
     }
 
     if (!roomCode) {
-      return send(ws, { type: "error", message: "Entre em uma sala primeiro." });
+      return send(ws, {
+        type: "error",
+        message: "Entre em uma sala primeiro."
+      });
     }
 
     const room = rooms.get(roomCode);
     if (!room) return;
 
+    // Encaminha pose, disparos e demais eventos do jogo
+    // sem permitir que o cliente falsifique o ID do jogador.
     for (const peer of room.players) {
       if (peer !== ws) {
         send(peer, {
-          type: msg.type,
-          playerId,
-          x: msg.x,
-          y: msg.y,
-          z: msg.z,
-          rotation: msg.rotation
+          ...msg,
+          playerId
         });
       }
     }
@@ -104,12 +129,14 @@ const code = msg.type === "create"
     room.players.delete(ws);
 
     for (const peer of room.players) {
-      send(peer, { type: "opponent_left" });
+      send(peer, { type: "peer-left" });
     }
 
     if (room.players.size === 0) {
       rooms.delete(roomCode);
     }
+
+    roomCode = null;
   });
 });
 
