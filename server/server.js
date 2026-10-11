@@ -25,7 +25,9 @@ wss.on("connection", (ws) => {
     }
 
     if (msg.type === "create" || msg.type === "join") {
-      const code = String(msg.room || "").trim().toUpperCase();
+const code = msg.type === "create"
+  ? Math.random().toString(36).substring(2, 8).toUpperCase()
+  : String(msg.room || "").trim().toUpperCase();
 
       if (!/^[A-Z0-9]{4,10}$/.test(code)) {
         return send(ws, { type: "error", message: "Código inválido (4 a 10 letras ou números)." });
